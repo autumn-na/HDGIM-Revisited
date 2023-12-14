@@ -62,6 +62,8 @@ class HDGIM:
         self.quantized_hypervector = torch.floor((self.encoded_hypervector + torch.abs(min_value)) / binary_width)
 
     def noise(self, probability):
+        self.noised_quantized_hypervector = self.quantized_hypervector
+
         for i, value in enumerate(self.quantized_hypervector):
             is_change = (probability >= random.random())
             if not is_change:
@@ -70,7 +72,7 @@ class HDGIM:
             left_or_right = random.randint(0, 1)
             change_value = -1 if left_or_right == 0 else 1
             noised_value = max(0, min(value + change_value, pow(2, self.bit_precision) - 1))
-            self.quantized_hypervector[i] = noised_value
+            self.noised_quantized_hypervector[i] = noised_value
 
     def set_dataset(self, dna_dataset):
         self.dna_dataset = dna_dataset
