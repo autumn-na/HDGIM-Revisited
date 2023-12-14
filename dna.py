@@ -1,7 +1,6 @@
 import torch
 from enum import Enum
 from torch.utils.data import Dataset
-from constants import *
 
 
 class DNA(Enum):
@@ -52,17 +51,17 @@ class DNASequence:
         self.dna_sequence = tensor
 
 class DNADataset(Dataset):
-    def __init__(self):
-        self.dna_sequence = DNASequence(DNA_SEQUENCE_LENGTH)
+    def __init__(self, dna_sequence_length, dna_subsequence_length):
+        self.dna_sequence = DNASequence(dna_sequence_length)
         self.dna_sequence.randomize()
 
-        self.true_dna_subsequences = self.dna_sequence.get_subsequences_as_dna_sequence(CHUNK_LENGTH)
+        self.true_dna_subsequences = self.dna_sequence.get_subsequences_as_dna_sequence(dna_subsequence_length)
         self.false_dna_subsequences = []
         self.dna_subsequences = []
 
-        for _ in range(len(self.dna_sequence) // CHUNK_LENGTH):
+        for _ in range(len(self.dna_sequence) // dna_subsequence_length):
             while True:
-                false_subsequence = DNASequence(CHUNK_LENGTH)
+                false_subsequence = DNASequence(dna_subsequence_length)
                 false_subsequence.randomize()
 
                 if not self.dna_sequence.is_contained(false_subsequence):
