@@ -16,8 +16,13 @@ class HDGIM:
         self.dna_sequence = None  # 1-dim DNA tensor
         self.dna_subsequences = None  # 2-dim DNA tensor
         self.base_hypervectors = None  # dictionary { DNA: tensor }
+
         self.encoded_hypervector = None  # 1-dim double tensor
+        self.encoded_hypervector_library = None  # 2-dim double tensor
+
         self.quantized_hypervector = None  # 1-dim binary tensor
+        self.quantized_hypervector_library = None  # 2-dim binary tensor
+
         self.noised_quantized_hypervector = None  # 1-dim binary tensor
 
         self.dna_dataset = None  # DNADataset
@@ -38,7 +43,6 @@ class HDGIM:
 
     def bind(self):
         chunk_hypervectors = []
-        stacked_chunk_hypervector = torch.empty(len(self.dna_subsequences), self.hypervector_dimension)
     
         for shift_count, dna_subsequence in enumerate(self.dna_subsequences):
             chunk_hypervector = torch.ones(1, self.hypervector_dimension)
@@ -46,12 +50,12 @@ class HDGIM:
             for _dna in dna_subsequence:
                 dna_value = dna.DNA(_dna.item())
                 base_hypervector = torch.roll(self.base_hypervectors[dna_value], shifts=shift_count, dims=0)
-                chunk_hypervector = torch.mul(chunk_hypervector, base_hypervector)
+                chunk_hypervector = torch.squeeze(torch.mul(chunk_hypervector, base_hypervector))
 
             chunk_hypervectors.append(chunk_hypervector)
   
-        stacked_chunk_hypervector = torch.stack(chunk_hypervectors)
-        self.encoded_hypervector = torch.squeeze(torch.sum(stacked_chunk_hypervector, dim=0))  # bundling hypervectors
+        self.encoded_hypervector_library = torch.stack(chunk_hypervectors)
+        self.encoded_hypervector = torch.sum(self.encoded_hypervector_library, dim=0)  # bundling hypervectors
 
     def quantize_min_max(self):
         min_value = torch.min(self.encoded_hypervector)
@@ -59,6 +63,7 @@ class HDGIM:
 
         binary_width = (max_value - min_value) / (self.bit_precision + 1)
 
+        self.quantized_hypervector_library = torch.floor((self.encoded_hypervector_library + torch.abs(min_value)) / binary_width)
         self.quantized_hypervector = torch.floor((self.encoded_hypervector + torch.abs(min_value)) / binary_width)
 
     def noise(self, probability):
@@ -76,3 +81,12 @@ class HDGIM:
 
     def set_dataset(self, dna_dataset):
         self.dna_dataset = dna_dataset
+
+    def get_similarity(self, hypervector1, hypervector2):
+        difference_hypervector = torch.abs(hypervector1 - hypervector2)
+        similarity = 0
+
+        for value in difference_hypervector:
+            similarity += torch.sum(self.quantized_hypervector_library[value]).item()
+
+        return similarity
