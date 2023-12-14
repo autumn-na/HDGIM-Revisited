@@ -2,7 +2,7 @@ import torch
 import dna
 import math
 import random
-
+from torch.utils.data import DataLoader
 
 class HDGIM:
     def __init__(self, hypervector_dimension, dna_sequence_length, dna_subsequence_length, bit_precision):
@@ -57,6 +57,16 @@ class HDGIM:
         self.encoded_hypervector_library = torch.stack(chunk_hypervectors)
         self.encoded_hypervector = torch.sum(self.encoded_hypervector_library, dim=0)  # bundling hypervectors
 
+    def bind_dna_sequence(self, dna_sequence):
+        chunk_hypervector = torch.ones(1, self.hypervector_dimension)
+
+        for shift_count, _dna in enumerate(dna_sequence):
+            dna_value = dna.DNA(_dna.item())
+            base_hypervector = torch.roll(self.base_hypervectors[dna_value], shifts=shift_count, dims=0)
+            chunk_hypervector = torch.squeeze(torch.mul(chunk_hypervector, base_hypervector))
+  
+        return chunk_hypervector
+
     def quantize_min_max(self):
         min_value = torch.min(self.encoded_hypervector)
         max_value = torch.max(self.encoded_hypervector)
@@ -65,6 +75,14 @@ class HDGIM:
 
         self.quantized_hypervector_library = torch.floor((self.encoded_hypervector_library + torch.abs(min_value)) / binary_width)
         self.quantized_hypervector = torch.floor((self.encoded_hypervector + torch.abs(min_value)) / binary_width)
+
+    def quantize_dna_sequence_min_max(self, dna_sequence):
+        min_value = torch.min(self.encoded_hypervector)
+        max_value = torch.max(self.encoded_hypervector)
+
+        binary_width = (max_value - min_value) / (self.bit_precision + 1)
+
+        return torch.floor((dna_sequence + torch.abs(min_value)) / binary_width)
 
     def noise(self, probability):
         self.noised_quantized_hypervector = self.quantized_hypervector
@@ -87,6 +105,32 @@ class HDGIM:
         similarity = 0
 
         for value in difference_hypervector:
-            similarity += torch.sum(self.quantized_hypervector_library[value]).item()
+            similarity += torch.sum(self.quantized_hypervector_library[:, int(value.item())], dim=0).item()
 
         return similarity
+    
+    def train(self, epoch, learning_rate, threshold):
+        data_loader = DataLoader(self.dna_dataset, batch_size=1, shuffle=True)
+
+        for _epoch in range(epoch):
+            success_cnt = 0
+            for cnt, data in enumerate(data_loader):
+                query = torch.squeeze(data['subsequence'])
+                encoded_query = self.bind_dna_sequence(query)
+                quantized_query = self.quantize_dna_sequence_min_max(encoded_query)
+
+                similarity = self.get_similarity(self.quantized_hypervector, quantized_query)
+                divided_similarity = similarity / self.hypervector_dimension
+
+                if (divided_similarity >= threshold) and (data['isContained'].item() == False):
+                    self.encoded_hypervector -= learning_rate * encoded_query
+                elif (divided_similarity < threshold) and (data['isContained'].item() == True):
+                    self.encoded_hypervector += learning_rate * encoded_query
+                    success_cnt += 1
+                cnt += 1
+
+            print("Epoch {}: Accuracy {}%".format(_epoch, (success_cnt / cnt) * 100))
+                
+
+
+                
