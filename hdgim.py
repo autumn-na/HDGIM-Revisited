@@ -1,6 +1,7 @@
 import torch
 import dna
 import math
+import random
 
 
 class HDGIM:
@@ -17,6 +18,7 @@ class HDGIM:
         self.base_hypervectors = None  # dictionary { DNA: tensor }
         self.encoded_hypervector = None  # 1-dim double tensor
         self.quantized_hypervector = None  # 1-dim binary tensor
+        self.noised_quantized_hypervector = None  # 1-dim binary tensor
 
         self.dna_dataset = None  # DNADataset
 
@@ -55,9 +57,20 @@ class HDGIM:
         min_value = torch.min(self.encoded_hypervector)
         max_value = torch.max(self.encoded_hypervector)
 
-        binary_width = (max_value - min_value) / self.bit_precision
+        binary_width = (max_value - min_value) / (self.bit_precision + 1)
 
         self.quantized_hypervector = torch.floor((self.encoded_hypervector + torch.abs(min_value)) / binary_width)
+
+    def noise(self, probability):
+        for i, value in enumerate(self.quantized_hypervector):
+            is_change = (probability >= random.random())
+            if not is_change:
+                continue
+            
+            left_or_right = random.randint(0, 1)
+            change_value = -1 if left_or_right == 0 else 1
+            noised_value = max(0, min(value + change_value, pow(2, self.bit_precision) - 1))
+            self.quantized_hypervector[i] = noised_value
 
     def set_dataset(self, dna_dataset):
         self.dna_dataset = dna_dataset
