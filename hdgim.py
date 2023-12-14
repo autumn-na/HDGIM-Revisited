@@ -21,10 +21,11 @@ class HDGIM:
                                   dna.DNA.T: 2 * PI * torch.rand(BASE_DIMENSION) - PI}
 
     def create_dna_sequence(self):
-        self.dna_sequence = dna.create_random_dna_sequence(DNA_SEQUENCE_LENGTH)
+        self.dna_sequence = dna.DNASequence(DNA_SEQUENCE_LENGTH)
+        self.dna_sequence.randomize()
 
     def split_dna_chunks(self):
-        self.dna_chunks = dna.get_chunks_dna_sequence(self.dna_sequence, CHUNK_LENGTH)
+        self.dna_chunks = self.dna_sequence.get_subsequences(CHUNK_LENGTH)
 
     def bind(self):
         chunk_hypervectors = None

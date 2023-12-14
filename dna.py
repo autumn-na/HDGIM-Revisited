@@ -10,53 +10,72 @@ class DNA(Enum):
     G = 2
     T = 3
 
-
-class DNADataset(Dataset):
-    def __init__(self, dna_sequence):
-        self.dna_sequence = dna_sequence
-        self.true_chunks = list(torch.split(self.dna_sequence, CHUNK_LENGTH))
-        self.false_chunks = []
-        self.chunks = []
-
-        for i in range(len(dna_sequence) // CHUNK_LENGTH):
-            while True:
-                tmp_false_chunk = create_random_dna_sequence(CHUNK_LENGTH)
-                is_contained = is_dna_chunk_contained(self.dna_sequence, tmp_false_chunk)
-
-                if not is_contained:
-                    break
-
-            self.false_chunks.append(tmp_false_chunk)
-
-        self.chunks = self.true_chunks + self.false_chunks
+class DNASequence:
+    def __init__(self, length):
+        self.length = length
+        self.dna_sequence = None  # Tensor
 
     def __len__(self):
-        return len(self.chunks)
+        return self.length
+
+    def randomize(self):
+        dna_values = list(DNA)
+        self.dna_sequence = torch.randint(len(dna_values), size=(self.length,))
+
+    def get_sequence(self):
+        return self.dna_sequence
+
+    def get_subsequences(self, subsequence_length):
+        subsequences = self.dna_sequence.reshape(self.dna_sequence.size(0) // subsequence_length, subsequence_length)
+        return subsequences
+    
+    def get_subsequences_as_dna_sequence(self, subsequence_length):
+        result = []
+        subsequence_list = list(torch.split(self.dna_sequence, subsequence_length))
+
+        for subsequence in subsequence_list:
+            dna_sequence = DNASequence(subsequence_length)
+            dna_sequence.set_sequence_by_tensor(subsequence)
+            result.append(dna_sequence)
+        return result
+    
+    def is_contained(self, dna_sequence):
+        length = len(dna_sequence)
+
+        for i in range(self.length - length + 1):
+            if torch.equal(self.dna_sequence[i:i + length], dna_sequence.get_sequence()):
+                return True
+
+        return False
+    
+    def set_sequence_by_tensor(self, tensor):
+        self.dna_sequence = tensor
+
+class DNADataset(Dataset):
+    def __init__(self):
+        self.dna_sequence = DNASequence(DNA_SEQUENCE_LENGTH)
+        self.dna_sequence.randomize()
+
+        self.true_dna_subsequences = self.dna_sequence.get_subsequences_as_dna_sequence(CHUNK_LENGTH)
+        self.false_dna_subsequences = []
+        self.dna_subsequences = []
+
+        for _ in range(len(self.dna_sequence) // CHUNK_LENGTH):
+            while True:
+                false_subsequence = DNASequence(CHUNK_LENGTH)
+                false_subsequence.randomize()
+
+                if not self.dna_sequence.is_contained(false_subsequence):
+                    break
+
+            self.false_dna_subsequences.append(false_subsequence)
+
+        self.dna_subsequences = self.true_dna_subsequences + self.false_dna_subsequences
+
+    def __len__(self):
+        return len(self.dna_subsequences)
 
     def __getitem__(self, idx):
-        is_contained = is_dna_chunk_contained(self.dna_sequence, self.chunks[idx])
-        sample = {'isContained': is_contained, 'chunk': self.chunks[idx]}
+        is_contained = self.dna_sequence.is_contained(self.dna_subsequences[idx])
+        sample = {'isContained': is_contained, 'subsequence': self.dna_subsequences[idx].get_sequence()}
         return sample
-
-
-def create_random_dna_sequence(length):
-    dna_values = list(DNA)
-    dna_sequence = torch.randint(len(dna_values), size=(length,))
-
-    return dna_sequence
-
-
-def get_chunks_dna_sequence(dna_sequence, chunk_size):
-    chunks = dna_sequence.reshape(dna_sequence.size(0) // chunk_size, chunk_size)
-    return chunks
-
-
-def is_dna_chunk_contained(dna_sequence, dna_chunk):
-    len_dna_sequence = dna_sequence.size(0)
-    len_dna_chunk = dna_chunk.size(0)
-
-    for i in range(len_dna_sequence - len_dna_chunk + 1):
-        if torch.equal(dna_sequence[i:i + len_dna_chunk], dna_chunk):
-            return True
-
-    return False
