@@ -13,6 +13,8 @@ class HDGIM:
         self.bit_precision = bit_precision
         # [end] hyperparameters
 
+        self.max_value = pow(2, self.bit_precision) - 1
+
         self.dna_sequence = None  # 1-dim DNA tensor
         self.dna_subsequences = None  # 2-dim DNA tensor
         self.base_hypervectors = None  # dictionary { DNA: tensor }
@@ -84,17 +86,28 @@ class HDGIM:
 
         return torch.floor((dna_sequence + torch.abs(min_value)) / binary_width)
 
+    # probability: 0 ~ 1, simulate FeFET noise
+    # Assume that left probability is same as right probability
     def noise(self, probability):
         self.noised_quantized_hypervector = self.quantized_hypervector
 
         for i, value in enumerate(self.quantized_hypervector):
-            is_change = (probability >= random.random())
+            is_change = (probability > random.random())
             if not is_change:
                 continue
-            
-            left_or_right = random.randint(0, 1)
+          
+            left_or_right = 0  # 0: left, 1: right
+            value_int = value.item()
+
+            if value_int == 0:
+                left_or_right = 1
+            elif value_int == self.max_value:
+                left_or_right = 0
+            else:
+                left_or_right = random.randint(0, 1)
+
             change_value = -1 if left_or_right == 0 else 1
-            noised_value = max(0, min(value + change_value, pow(2, self.bit_precision) - 1))
+            noised_value = value_int + change_value
             self.noised_quantized_hypervector[i] = noised_value
 
     def set_dataset(self, dna_dataset):
