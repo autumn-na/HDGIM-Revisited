@@ -154,12 +154,14 @@ class HDGIM:
 
         return similarity
     
-    def train(self, epoch, learning_rate, threshold):
+    def train(self, epoch, learning_rate, threshold, return_accuracy=False, print_result=False):
         train_size = int(0.8 * len(self.dna_dataset))
         test_size = len(self.dna_dataset) - train_size
 
         train_dataset, test_dataset = random_split(self.dna_dataset, [train_size, test_size])
-        print("Train size: {}, Test size: {}".format(train_size, test_size))
+
+        if print_result:
+            print("Train size: {}, Test size: {}".format(train_size, test_size))
 
         train_data_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
         test_data_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
@@ -209,6 +211,9 @@ class HDGIM:
                 elif (divided_similarity >= threshold) and (data['isContained'].item() == True):  # false positive
                     false_positive_cnt += 1
 
-            print("Epoch {}: Accuracy {}%".format(_epoch, round((success_cnt / len(test_data_loader)) * 100, 2)))
-            print("True negative: {}, True positive: {}, False negative: {}, False positive: {}".format(true_negative_cnt, true_positive_cnt, false_negative_cnt, false_positive_cnt))
-                
+            if print_result:
+                print("Epoch {}: Accuracy {}%".format(_epoch, round((success_cnt / len(test_data_loader)) * 100, 2)))
+                print("True negative: {}, True positive: {}, False negative: {}, False positive: {}".format(true_negative_cnt, true_positive_cnt, false_negative_cnt, false_positive_cnt))
+
+        if return_accuracy:
+            return (success_cnt / len(test_data_loader)) * 100
