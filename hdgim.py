@@ -34,7 +34,6 @@ class HDGIM:
     def create_voltage_matrix(self):
         self.voltage_matrix = torch.ones(self.max_value + 1, self.max_value + 1)
         self.voltage_matrix.fill_diagonal_(0)
-        print(self.voltage_matrix)
 
     def create_base_hypervectors(self):
         pi = math.pi
