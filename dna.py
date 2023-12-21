@@ -25,18 +25,22 @@ class DNASequence:
         return self.dna_sequence
 
     def get_subsequences(self, subsequence_length):
-        subsequences = self.dna_sequence.reshape(self.dna_sequence.size(0) // subsequence_length, subsequence_length)
-        return subsequences
+        subsequences = []
+
+        for i in range(self.length - subsequence_length + 1):
+            subsequences.append(self.dna_sequence[i:i + subsequence_length])
+
+        return torch.stack(subsequences)
     
     def get_subsequences_as_dna_sequence(self, subsequence_length):
-        result = []
-        subsequence_list = list(torch.split(self.dna_sequence, subsequence_length))
+        subsequences = []
 
-        for subsequence in subsequence_list:
+        for i in range(self.length - subsequence_length + 1):
             dna_sequence = DNASequence(subsequence_length)
-            dna_sequence.set_sequence_by_tensor(subsequence)
-            result.append(dna_sequence)
-        return result
+            dna_sequence.set_sequence_by_tensor(self.dna_sequence[i:i + subsequence_length])
+            subsequences.append(dna_sequence)
+        
+        return subsequences
     
     def is_contained(self, dna_sequence):
         length = len(dna_sequence)
@@ -75,6 +79,6 @@ class DNADataset(Dataset):
         return len(self.dna_subsequences)
 
     def __getitem__(self, idx):
-        is_contained = self.dna_sequence.is_contained(self.dna_subsequences[idx])
-        sample = {'isContained': is_contained, 'subsequence': self.dna_subsequences[idx].get_sequence()}
+        is_contained = self.dna_sequence.is_contained(self.dna_subsequences[idx])       
+        sample = {'isContained': is_contained, 'subsequence': torch.squeeze(self.dna_subsequences[idx].get_sequence())}
         return sample
