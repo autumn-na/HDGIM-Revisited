@@ -13,7 +13,8 @@ class HDGIM:
         self.bit_precision = bit_precision
         # [end] hyperparameters
 
-        self.max_value = pow(2, self.bit_precision) - 1
+        self.max_value = pow(2, self.bit_precision) - 1  # max value of quantized hypervector
+        self.voltage_matrix = None  # (max_value + 1)-dim int tensor, denoted M^c in paper
 
         self.dna_sequence = None  # 1-dim DNA tensor
         self.dna_subsequences = None  # 2-dim DNA tensor
@@ -28,6 +29,10 @@ class HDGIM:
         self.noised_quantized_hypervector = None  # 1-dim binary tensor
 
         self.dna_dataset = None  # DNADataset
+
+    def create_voltage_matrix(self):
+        self.voltage_matrix = torch.ones(self.max_value + 1, self.max_value + 1)
+        self.voltage_matrix.fill_diagonal_(0)
 
     def create_base_hypervectors(self):
         pi = math.pi
@@ -114,11 +119,11 @@ class HDGIM:
         self.dna_dataset = dna_dataset
 
     def get_similarity(self, hypervector1, hypervector2):
-        difference_hypervector = torch.abs(hypervector1 - hypervector2)
         similarity = 0
 
-        for value in difference_hypervector:
-            similarity += torch.sum(self.quantized_hypervector_library[:, int(value.item())], dim=0).item()
+        for i in range(self.hypervector_dimension):
+           voltage = self.voltage_matrix[int(hypervector1[i].item())][int(hypervector2[i].item())]
+           similarity += voltage
 
         return similarity
     
@@ -143,7 +148,4 @@ class HDGIM:
                 cnt += 1
 
             print("Epoch {}: Accuracy {}%".format(_epoch, (success_cnt / cnt) * 100))
-                
-
-
                 

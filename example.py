@@ -15,6 +15,7 @@ dataset = dna.DNADataset(DNA_SEQUENCE_LENGTH, DNA_SUBSEQUENCE_LENGTH)
 
 model = hdgim.HDGIM(HYPERVECTOR_DIMENSION, DNA_SEQUENCE_LENGTH, DNA_SUBSEQUENCE_LENGTH, BIT_PRECISION)
 model.set_dataset(dataset)
+model.create_voltage_matrix()
 model.create_base_hypervectors()
 model.create_dna_sequence()
 model.create_dna_subsequences()
