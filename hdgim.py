@@ -2,7 +2,8 @@ import torch
 import dna
 import math
 import random
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 class HDGIM:
     def __init__(self, hypervector_dimension, dna_sequence_length, dna_subsequence_length, bit_precision, noise_probability):
@@ -145,75 +146,95 @@ class HDGIM:
     def set_dataset(self, dna_dataset):
         self.dna_dataset = dna_dataset
 
-    def get_similarity(self, hypervector1, hypervector2):  # 0 ~ 1000
-        similarity = 0
+    def get_similarity_by_voltage_matrix(self, hypervector1, hypervector2):  # 0 ~ 1000
+        distance = 0
 
         for i in range(self.hypervector_dimension):
            voltage = self.voltage_matrix[int(hypervector1[i].item())][int(hypervector2[i].item())]
-           similarity += voltage
+           distance += voltage
 
-        return similarity
+        return -distance
     
-    def train(self, epoch, learning_rate, threshold, return_accuracy=False, print_result=False):
-        train_size = int(0.8 * len(self.dna_dataset))
-        test_size = len(self.dna_dataset) - train_size
-
-        train_dataset, test_dataset = random_split(self.dna_dataset, [train_size, test_size])
-
-        if print_result:
-            print("Train size: {}, Test size: {}".format(train_size, test_size))
-
+    def get_similarity_by_hamming_distance(self, hypervector1, hypervector2):  # 0 ~ 1
+        return torch.sum(torch.abs(hypervector1 - hypervector2))
+    
+    def get_similarity_by_euclidean_distance(self, hypervector1, hypervector2):  # 0 ~ 1
+        return -torch.dist(hypervector1, hypervector2, 2)
+    
+    def get_similarity_by_cosine_similarity(self, hypervector1, hypervector2):  # -1 ~ 1
+        return F.cosine_similarity(hypervector1, hypervector2, dim=0)
+    
+    def train(self, epoch, learning_rate, threshold, f='voltage', full_precision=False, return_data=False, print_info=False):
+        train_dataset = self.dna_dataset
         train_data_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-        test_data_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+        accuracies = []
+        true_similarities = []
+        false_similarities = []
+
+        if print_info:
+            print("Train size: {}".format(len(train_dataset)))
+
+        similarity_function = None
+        if f == 'voltage':
+            similarity_function = self.get_similarity_by_voltage_matrix
+        elif f == 'hamming':
+            similarity_function = self.get_similarity_by_hamming_distance
+        elif f == 'euclidean':
+            similarity_function = self.get_similarity_by_euclidean_distance
+        elif f == 'cosine':
+            similarity_function = self.get_similarity_by_cosine_similarity
 
         # train
         for _epoch in range(epoch):
+            success_cnt = 0
+            true_negative_cnt = 0
+            true_positive_cnt = 0   
+            false_negative_cnt = 0  
+            false_positive_cnt = 0 
+
+            true_similarities.append([])
+            false_similarities.append([])
+
             for data in train_data_loader:
                 query = torch.squeeze(data['subsequence'])
                 encoded_query = self.bind_dna_sequence(query)
                 quantized_query = self.quantize_dna_sequence_min_max(encoded_query)
-                noised_quantized_query = self.noise_dna_sequence(quantized_query)
+                
+                similarity = 0
+                divided_similarity = 0
 
-                similarity = self.get_similarity(self.noised_quantized_hypervector, noised_quantized_query)
-                divided_similarity = similarity / self.hypervector_dimension  # 0 ~ 1
+                if full_precision:
+                    similarity = similarity_function(self.encoded_hypervector, encoded_query)
+                    divided_similarity = similarity
+                else:
+                    similarity = similarity_function(self.noised_quantized_hypervector, quantized_query)
+                    divided_similarity = similarity / self.hypervector_dimension  # 0 ~ 1
 
-                if (divided_similarity >= threshold) and (data['isContained'].item() == False):
-                    self.encoded_hypervector -= learning_rate * encoded_query
-                elif (divided_similarity < threshold) and (data['isContained'].item() == True):
-                    self.encoded_hypervector += learning_rate * encoded_query
-
-            # test
-            success_cnt = 0
-
-            # test values
-            true_negative_cnt = 0
-            true_positive_cnt = 0
-            false_negative_cnt = 0
-            false_positive_cnt = 0
-            
-            for data in test_data_loader:
-                query = torch.squeeze(data['subsequence'])
-                encoded_query = self.bind_dna_sequence(query)
-                quantized_query = self.quantize_dna_sequence_min_max(encoded_query)
-                noised_quantized_query = self.noise_dna_sequence(quantized_query)
-
-                similarity = self.get_similarity(self.noised_quantized_hypervector, noised_quantized_query)
-                divided_similarity = similarity / self.hypervector_dimension
-
-                if (divided_similarity >= threshold) and (data['isContained'].item() == False):  # true negative
+                if (divided_similarity < threshold) and (data['isContained'].item() == False):  # true negative
                     true_negative_cnt += 1
                     success_cnt += 1
-                elif (divided_similarity < threshold) and (data['isContained'].item() == True):  # true positive
+                elif (divided_similarity >= threshold) and (data['isContained'].item() == True):  # true positive
                     true_positive_cnt += 1
                     success_cnt += 1
-                elif (divided_similarity < threshold) and (data['isContained'].item() == False):  # false negative
+                elif (divided_similarity >= threshold) and (data['isContained'].item() == False):  # false negative
+                    self.encoded_hypervector -= learning_rate * encoded_query
                     false_negative_cnt += 1
-                elif (divided_similarity >= threshold) and (data['isContained'].item() == True):  # false positive
+                elif (divided_similarity < threshold) and (data['isContained'].item() == True):  # false positive
+                    self.encoded_hypervector += learning_rate * encoded_query
                     false_positive_cnt += 1
 
-            if print_result:
-                print("Epoch {}: Accuracy {}%".format(_epoch, round((success_cnt / len(test_data_loader)) * 100, 2)))
+                if data['isContained'].item() == False:
+                    false_similarities[_epoch].append(divided_similarity)
+                else:
+                    true_similarities[_epoch].append(divided_similarity)
+
+            accuracy = round((success_cnt / len(train_data_loader)) * 100, 2)
+            accuracies.append(accuracy)
+
+            if print_info:
+                print("Epoch {}: Accuracy {}%".format(_epoch, accuracy))
+                print("Average true similarity: {}, Average false similarity: {}".format(sum(true_similarities[_epoch]) / len(true_similarities[_epoch]), sum(false_similarities[_epoch]) / len(false_similarities[_epoch])))
                 print("True negative: {}, True positive: {}, False negative: {}, False positive: {}".format(true_negative_cnt, true_positive_cnt, false_negative_cnt, false_positive_cnt))
 
-        if return_accuracy:
-            return (success_cnt / len(test_data_loader)) * 100
+        if return_data:
+            return accuracies, true_similarities, false_similarities
