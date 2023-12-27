@@ -63,7 +63,7 @@ class DNADataset(Dataset):
         self.false_dna_subsequences = []
         self.dna_subsequences = []
 
-        for _ in range(len(self.dna_sequence) // dna_subsequence_length):
+        for _ in range(len(self.true_dna_subsequences) // 10):
             while True:
                 false_subsequence = DNASequence(dna_subsequence_length)
                 false_subsequence.randomize()
