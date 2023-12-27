@@ -227,20 +227,22 @@ class HDGIM:
                     similarity = similarity_function(self.noised_quantized_hypervector, quantized_query)
                     divided_similarity = similarity # / self.hypervector_dimension
 
-                if (divided_similarity < threshold) and (data['isContained'].item() == False):  # true negative
+                is_contained = data['isContained'].item()
+
+                if (divided_similarity < threshold) and (is_contained is False):  # true negative
                     true_negative_cnt += 1
                     success_cnt += 1
-                elif (divided_similarity >= threshold) and (data['isContained'].item() == True):  # true positive
+                elif (divided_similarity >= threshold) and (is_contained is True):  # true positive
                     true_positive_cnt += 1
                     success_cnt += 1
-                elif (divided_similarity >= threshold) and (data['isContained'].item() == False):  # false negative
+                elif (divided_similarity >= threshold) and (is_contained is False):  # false negative
                     self.encoded_hypervector -= learning_rate * encoded_query
                     false_negative_cnt += 1
-                elif (divided_similarity < threshold) and (data['isContained'].item() == True):  # false positive
+                elif (divided_similarity < threshold) and (is_contained is True):  # false positive
                     self.encoded_hypervector += learning_rate * encoded_query
                     false_positive_cnt += 1
 
-                if data['isContained'].item() == False:
+                if is_contained is False:
                     false_similarities[_epoch].append(divided_similarity)
                 else:
                     true_similarities[_epoch].append(divided_similarity)
