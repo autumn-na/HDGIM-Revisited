@@ -4,7 +4,8 @@ import math
 import random
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
-from scipy.stats import norm
+import scipy.stats as stats
+import numpy as np
 
 class HDGIM:
     def __init__(self, hypervector_dimension, dna_sequence_length, dna_subsequence_length, bit_precision, noise_probability):
@@ -88,12 +89,14 @@ class HDGIM:
 
     def quantize_cdf(self):
         sorted_tensor, indices = torch.sort(self.encoded_hypervector)
-        cdf = torch.tensor(norm.cdf(sorted_tensor.numpy()), dtype=torch.float32)
-        bin_width = 1.0 / (2**self.bit_precision)
-        quantized_tensor = torch.floor(cdf / bin_width)
-        quantized_tensor[quantized_tensor >= 2**self.bit_precision] = 2**self.bit_precision - 1
-        quantized_tensor = quantized_tensor[torch.argsort(indices)]
-        self.quantized_hypervector = quantized_tensor
+        np_sorted_tensor = sorted_tensor.numpy()
+        np_normalized_sorted_tensor = (np_sorted_tensor - np_sorted_tensor.mean()) / np_sorted_tensor.std()
+        binary_width = 1.0 / 2**self.bit_precision
+
+        rv = stats.norm(0, 1) # assume standard normal distribution
+        cdf = rv.cdf(np_normalized_sorted_tensor)
+        quantized_cdf = np.floor(cdf / binary_width)
+        self.quantized_hypervector = torch.from_numpy(quantized_cdf)[torch.argsort(indices)]
 
     def quantize_dna_sequence_min_max(self, dna_sequence):
         min_value = torch.min(dna_sequence)
@@ -105,12 +108,15 @@ class HDGIM:
     
     def quantize_dna_sequence_cdf(self, dna_sequence):
         sorted_tensor, indices = torch.sort(dna_sequence)
-        cdf = torch.tensor(norm.cdf(sorted_tensor.numpy()), dtype=torch.float32)
-        bin_width = 1.0 / (2**self.bit_precision)
-        quantized_tensor = torch.floor(cdf / bin_width)
-        quantized_tensor[quantized_tensor >= 2**self.bit_precision] = 2**self.bit_precision - 1
-        quantized_tensor = quantized_tensor[torch.argsort(indices)]
-        return quantized_tensor.int()
+        np_sorted_tensor = sorted_tensor.numpy()
+        np_normalized_sorted_tensor = (np_sorted_tensor - np_sorted_tensor.mean()) / np_sorted_tensor.std()
+        binary_width = 1.0 / 2**self.bit_precision
+
+        rv = stats.norm(0, 1) # assume standard normal distribution
+        cdf = rv.cdf(np_normalized_sorted_tensor)
+        quantized_cdf = np.floor(cdf / binary_width)
+
+        return torch.from_numpy(quantized_cdf)[torch.argsort(indices)]
 
     # Assume that left probability is same as right probability
     def noise(self):
@@ -170,6 +176,17 @@ class HDGIM:
         return -distance
     
     def get_similarity_by_hamming_distance(self, hypervector1, hypervector2):
+        # Calculate Hamming distance element-wise
+        # distance = 0
+
+        # for i in range(self.hypervector_dimension):
+        #     item1 = int(hypervector1[i].item())
+        #     item2 = int(hypervector2[i].item())
+
+        #     distance += bin(item1 ^ item2).count('1')
+            
+        # return -distance
+
         return -torch.sum(torch.abs(hypervector1 - hypervector2))
     
     def get_similarity_by_euclidean_distance(self, hypervector1, hypervector2):  # 0 ~ 1
@@ -180,7 +197,7 @@ class HDGIM:
     
     def train(self, epoch, learning_rate, threshold, f='voltage', full_precision=False, return_data=False, print_info=False):
         train_dataset = self.dna_dataset
-        train_data_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+        train_data_loader = DataLoader(train_dataset, batch_size=1, shuffle=False)
         accuracies = []
         true_similarities = []
         false_similarities = []
@@ -209,14 +226,11 @@ class HDGIM:
             true_similarities.append([])
             false_similarities.append([])
 
-            for data in train_data_loader:
+            for i, data in enumerate(train_data_loader):
                 query = torch.squeeze(data['subsequence'])
                 encoded_query = self.bind_dna_sequence(query)
                 quantized_query = self.quantize_dna_sequence_cdf(encoded_query)
 
-                self.quantize_cdf()
-                self.noise()
-                
                 similarity = 0
                 divided_similarity = 0
 
@@ -225,7 +239,7 @@ class HDGIM:
                     divided_similarity = similarity
                 else:
                     similarity = similarity_function(self.noised_quantized_hypervector, quantized_query)
-                    divided_similarity = similarity # / self.hypervector_dimension
+                    divided_similarity = similarity / self.hypervector_dimension
 
                 is_contained = data['isContained'].item()
 
@@ -237,9 +251,13 @@ class HDGIM:
                     success_cnt += 1
                 elif (divided_similarity >= threshold) and (is_contained is False):  # false negative
                     self.encoded_hypervector -= learning_rate * encoded_query
+                    self.quantize_cdf()
+                    self.noise()
                     false_negative_cnt += 1
                 elif (divided_similarity < threshold) and (is_contained is True):  # false positive
                     self.encoded_hypervector += learning_rate * encoded_query
+                    self.quantize_cdf()
+                    self.noise()
                     false_positive_cnt += 1
 
                 if is_contained is False:

@@ -1,6 +1,7 @@
 import torch
 from enum import Enum
 from torch.utils.data import Dataset
+import random
 
 
 class DNA(Enum):
@@ -63,7 +64,7 @@ class DNADataset(Dataset):
         self.false_dna_subsequences = []
         self.dna_subsequences = []
 
-        for _ in range(len(self.true_dna_subsequences) // 10):
+        for _ in range(len(self.true_dna_subsequences)):
             while True:
                 false_subsequence = DNASequence(dna_subsequence_length)
                 false_subsequence.randomize()
@@ -74,6 +75,7 @@ class DNADataset(Dataset):
             self.false_dna_subsequences.append(false_subsequence)
 
         self.dna_subsequences = self.true_dna_subsequences + self.false_dna_subsequences
+        random.shuffle(self.dna_subsequences)
 
     def __len__(self):
         return len(self.dna_subsequences)
